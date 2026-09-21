@@ -16,12 +16,20 @@ from payroll_engine import PayrollEngine
 from excel_exporter import ExcelExporter
 from supabase_sync import SupabaseSync
 
+import tempfile
+
 app = Flask(__name__)
 
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("exports", exist_ok=True)
+# Temporary directories for uploads and exports (works in local, Render, and Vercel serverless)
+UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "rvs_uploads")
+EXPORT_DIR = os.path.join(tempfile.gettempdir(), "rvs_exports")
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+except Exception:
+    pass
 
-DB_PATH = "payroll_master.db"
+DB_PATH = os.environ.get("DB_PATH", os.path.join(tempfile.gettempdir(), "payroll_master.db") if os.environ.get("VERCEL") else "payroll_master.db")
 payroll_engine = PayrollEngine(DB_PATH)
 excel_exporter = ExcelExporter()
 supabase_client = SupabaseSync(DB_PATH)
@@ -65,7 +73,7 @@ def upload_biometric():
     month_year = request.form.get("month_year", "August 2026")
     month_days = int(request.form.get("month_days", 31))
 
-    temp_path = os.path.join("uploads", f"temp_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+    temp_path = os.path.join(UPLOAD_DIR, f"temp_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
     file.save(temp_path)
 
     try:
@@ -151,7 +159,7 @@ def export_excel():
         else:
             filename = f"Master_University_Salary_Bill_{safe_month}.xlsx"
 
-        filepath = os.path.join("exports", filename)
+        filepath = os.path.join(EXPORT_DIR, filename)
         excel_exporter.export_salary_bill(summary, filepath, selected_domain=domain, selected_department=department)
         return send_file(filepath, as_attachment=True, download_name=filename)
     except Exception as e:
