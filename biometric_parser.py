@@ -4,6 +4,8 @@ import os
 import re
 from institutional_rules import evaluate_daily_punch_rule, apply_institutional_employee_overrides, inject_guaranteed_exempt_employees
 
+import math
+
 def clean_str(val):
     if val is None:
         return ""
@@ -18,7 +20,10 @@ def clean_num(val):
     try:
         if isinstance(val, str):
             val = val.replace(",", "").strip()
-        return float(val)
+        v = float(val)
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
     except:
         return 0.0
 

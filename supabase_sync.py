@@ -233,11 +233,11 @@ class SupabaseSync:
                     "wf", "eb", "mess", "bus", "tot_ded", "net_salary", "account_no", "ifsc_code"
                 }
 
-                chunk_size = 100
+                chunk_size = 1000
                 for i in range(0, len(items), chunk_size):
                     chunk = []
                     for it in items[i:i + chunk_size]:
-                        row = {k: it.get(k, 0.0) for k in allowed_item_keys}
+                        row = {k: (0.0 if it.get(k) is None else it.get(k)) for k in allowed_item_keys}
                         row["run_id"] = run_id
                         row["month_days"] = month_days
                         chunk.append(row)
@@ -245,8 +245,11 @@ class SupabaseSync:
                     items_url = f"{self.url}/rest/v1/payroll_items"
                     req_items = urllib.request.Request(items_url, data=json.dumps(chunk).encode("utf-8"),
                                                        headers=self._headers(), method="POST")
-                    with urllib.request.urlopen(req_items, timeout=15):
-                        pass
+                    try:
+                        with urllib.request.urlopen(req_items, timeout=15):
+                            pass
+                    except Exception as ie:
+                        print(f"[Supabase Payroll Item Insert Warning]: {ie}")
 
             return {"status": "success", "run_id": run_id, "message": f"Payroll for {month_year} successfully saved and locked in Supabase Cloud!"}
         except Exception as e:

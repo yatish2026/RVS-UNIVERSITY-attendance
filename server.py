@@ -17,8 +17,10 @@ from excel_exporter import ExcelExporter
 from supabase_sync import SupabaseSync
 
 import tempfile
+import threading
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 # Temporary directories for uploads and exports (works in local, Render, and Vercel serverless)
 UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "rvs_uploads")
@@ -85,12 +87,15 @@ def upload_biometric():
 
         summary = payroll_engine.process_payroll(attendance_map, month_year, month_days)
 
-        # Auto-save run and items directly to Supabase Cloud
+        # Auto-save run and items directly to Supabase Cloud in background thread to guarantee fast response
         if supabase_client.is_configured():
-            try:
-                supabase_client.save_payroll_run(month_year, month_days, summary)
-            except Exception as se:
-                print(f"[Supabase Auto-Save Warning]: {se}")
+            def async_save_run(m_yr, m_days, p_sum):
+                try:
+                    supabase_client.save_payroll_run(m_yr, m_days, p_sum)
+                except Exception as se:
+                    print(f"[Supabase Auto-Save Warning]: {se}")
+
+            threading.Thread(target=async_save_run, args=(month_year, month_days, summary), daemon=True).start()
 
         return jsonify({
             "status": "success",
@@ -117,6 +122,15 @@ def calculate_payroll():
             month_days=month_days,
             deductions_map=deductions
         )
+        if supabase_client.is_configured():
+            def async_save_run(m_yr, m_days, p_sum):
+                try:
+                    supabase_client.save_payroll_run(m_yr, m_days, p_sum)
+                except Exception as se:
+                    print(f"[Supabase Recalc Auto-Save Warning]: {se}")
+
+            threading.Thread(target=async_save_run, args=(month_year, month_days, summary), daemon=True).start()
+
         return jsonify({"status": "success", "payroll_summary": summary})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
