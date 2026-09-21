@@ -133,6 +133,7 @@ def export_excel():
     attendance = data.get("attendance", {})
     deductions = data.get("deductions", {})
     domain = data.get("domain", "ALL")
+    department = data.get("department", "ALL")
 
     try:
         summary = payroll_engine.process_payroll(
@@ -142,12 +143,16 @@ def export_excel():
             deductions_map=deductions
         )
         safe_month = month_year.replace(" ", "_").replace("-", "_")
-        if domain and domain != "ALL":
+        if department and department != "ALL":
+            clean_dept = department.replace(" ", "_").replace("/", "_")
+            filename = f"{clean_dept}_Department_Salary_Bill_{safe_month}.xlsx"
+        elif domain and domain != "ALL":
             filename = f"{domain.replace(' ', '_')}_Department_Separated_Salary_Bill_{safe_month}.xlsx"
         else:
             filename = f"Master_University_Salary_Bill_{safe_month}.xlsx"
+
         filepath = os.path.join("exports", filename)
-        excel_exporter.export_salary_bill(summary, filepath, selected_domain=domain)
+        excel_exporter.export_salary_bill(summary, filepath, selected_domain=domain, selected_department=department)
         return send_file(filepath, as_attachment=True, download_name=filename)
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -173,7 +178,7 @@ def sync_supabase():
 def index():
     return render_template_string(HTML_CONTENT)
 
-HTML_CONTENT = """<!DOCTYPE html>
+HTML_CONTENT = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1286,6 +1291,18 @@ HTML_CONTENT = """<!DOCTYPE html>
       const q = (document.getElementById('payrollSearch')?.value || '').toLowerCase();
       const dept = document.getElementById('payrollDeptFilter')?.value || 'ALL';
 
+      // Update Export Button Label Dynamically
+      const btnText = document.getElementById('exportDomainBtnText');
+      if (btnText) {
+        if (dept && dept !== 'ALL') {
+          btnText.innerText = `Export ${dept} Department Salary Bill (.xlsx)`;
+        } else if (selectedPayrollDomain && selectedPayrollDomain !== 'ALL') {
+          btnText.innerText = `Export ${selectedPayrollDomain} Salary Bill (.xlsx)`;
+        } else {
+          btnText.innerText = 'Export Master Salary Bill (.xlsx)';
+        }
+      }
+
       const filteredItems = currentPayrollSummary.items.filter(it => {
         const dMatch = (selectedPayrollDomain === 'ALL' || it.domain === selectedPayrollDomain);
         const deptMatch = (dept === 'ALL' || it.department === dept);
@@ -1343,12 +1360,13 @@ HTML_CONTENT = """<!DOCTYPE html>
       });
     }
 
-    async function downloadDomainExcel(overrideDomain) {
+    async function downloadDomainExcel(overrideDomain, overrideDept) {
       if (!currentPayrollSummary) {
-        alert('Please upload biometric file first!');
+        alert('Please upload biometric file first or select a saved month!');
         return;
       }
       const dom = overrideDomain || selectedPayrollDomain || 'ALL';
+      const dept = overrideDept || (document.getElementById('payrollDeptFilter') ? document.getElementById('payrollDeptFilter').value : 'ALL');
       const monthYear = document.getElementById('payrollMonth').value;
       const monthDays = parseInt(document.getElementById('monthDays').value) || 31;
 
@@ -1360,6 +1378,7 @@ HTML_CONTENT = """<!DOCTYPE html>
             month_year: monthYear,
             month_days: monthDays,
             domain: dom,
+            department: dept,
             attendance: currentAttendance,
             deductions: currentDeductions
           })
@@ -1368,8 +1387,13 @@ HTML_CONTENT = """<!DOCTYPE html>
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const prefix = (dom === 'ALL') ? 'Master_University' : dom.replace(/ /g, '_');
-        a.download = `${prefix}_Department_Separated_Salary_Bill_${monthYear.replace(/ /g, '_')}.xlsx`;
+        let prefix = 'Master_University';
+        if (dept && dept !== 'ALL') {
+          prefix = `${dept.replace(/ /g, '_').replace(/\//g, '_')}_Department`;
+        } else if (dom && dom !== 'ALL') {
+          prefix = dom.replace(/ /g, '_');
+        }
+        a.download = `${prefix}_Salary_Bill_${monthYear.replace(/ /g, '_')}.xlsx`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1379,7 +1403,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     }
 
     async function downloadMasterExcel() {
-      await downloadDomainExcel('ALL');
+      await downloadDomainExcel('ALL', 'ALL');
     }
 
     async function savePayrollRun() {

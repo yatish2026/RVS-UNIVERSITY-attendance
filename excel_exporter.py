@@ -30,7 +30,7 @@ class ExcelExporter:
             bottom=Side(style='double', color='000000')
         )
 
-    def export_salary_bill(self, payroll_summary, output_file="Generated_Salary_Bill.xlsx", selected_domain="ALL"):
+    def export_salary_bill(self, payroll_summary, output_file="Generated_Salary_Bill.xlsx", selected_domain="ALL", selected_department="ALL"):
         wb = openpyxl.Workbook()
         wb.remove(wb.active) # Remove default empty sheet
 
@@ -38,16 +38,42 @@ class ExcelExporter:
         month_year = payroll_summary.get("month_year", "August 2026")
         month_days = payroll_summary.get("month_days", 31)
 
-        # Filter items if specific domain requested
-        if selected_domain and selected_domain != "ALL":
+        # 1. Specific Single Department Export (e.g., IT, CSE, CIVIL, Administration, etc.)
+        if selected_department and selected_department != "ALL":
+            dept_items = [it for it in all_items if it.get("department") == selected_department]
+            if selected_domain and selected_domain != "ALL":
+                filtered_by_dom = [it for it in dept_items if it.get("domain") == selected_domain]
+                if filtered_by_dom:
+                    dept_items = filtered_by_dom
+            
+            if not dept_items:
+                dept_items = all_items
+
+            dept_name = selected_department
+            is_teaching = any(it.get("domain") in ["Teaching", "Teaching ID"] for it in dept_items)
+
+            # Sheet 1: Dedicated Department Salary Bill with all staff rows (FIRST & ACTIVE TAB)
+            self._create_single_dept_salary_sheet(wb, f"{dept_name[:26]} Salary Bill", dept_name, dept_items, month_year, month_days, is_teaching=is_teaching)
+
+            # Sheet 2: Bank Disbursal for this Department
+            self._create_bank_disbursal_sheet(wb, dept_items, f"{dept_name[:18]} - Bank Disbursal", month_year)
+
+            # Sheet 3: Attendance Summary for this Department
+            self._create_attendance_summary_sheet(wb, dept_items, f"{dept_name[:18]} - Attendance", month_year, month_days)
+
+            # Sheet 4: Department Overview Summary
+            self._create_domain_summary_sheet(wb, dept_name, dept_items, month_year)
+
+            wb.active = 0
+            wb.save(output_file)
+            print(f"Department Salary Bill successfully exported for {dept_name} to {output_file}")
+            return output_file
+
+        # 2. Filter items if specific domain requested
+        elif selected_domain and selected_domain != "ALL":
             items = [it for it in all_items if it.get("domain") == selected_domain]
             if not items:
                 items = all_items
-        else:
-            items = all_items
-
-        # Build Domain-Specific Workbook or Full University Master Workbook
-        if selected_domain and selected_domain != "ALL":
             is_teaching = (selected_domain == "Teaching" or selected_domain == "Teaching ID")
 
             # 1. Consolidated Domain Sheet with full employee rows and department subtotals (FIRST TAB)
@@ -74,9 +100,13 @@ class ExcelExporter:
             # 5. Domain Attendance Summary Sheet
             self._create_attendance_summary_sheet(wb, items, f"{selected_domain[:15]} - Attendance", month_year, month_days)
 
+            wb.active = 0
+            wb.save(output_file)
+            return output_file
+
         else:
-            # Full Master Workbook
-            # 1. Teaching Faculty Master & Individual Department Sheets
+            # 3. Full Master Workbook
+            items = all_items
             teaching_items = [it for it in items if it.get("domain") == "Teaching"]
             if teaching_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Teaching Faculty", teaching_items, month_year, month_days, is_teaching=True)
