@@ -48,16 +48,14 @@ class ExcelExporter:
 
         # Build Domain-Specific Workbook or Full University Master Workbook
         if selected_domain and selected_domain != "ALL":
-            # 1. Domain Executive Summary
-            self._create_domain_summary_sheet(wb, selected_domain, items, month_year)
-
-            # 2. Consolidated Domain Sheet (with department banners & subtotals)
             is_teaching = (selected_domain == "Teaching" or selected_domain == "Teaching ID")
+
+            # 1. Consolidated Domain Sheet with full employee rows and department subtotals (FIRST TAB)
             self._create_salary_sheet_with_dept_subtotals(
-                wb, f"{selected_domain} - All Depts", items, month_year, month_days, is_teaching=is_teaching
+                wb, f"{selected_domain[:20]} Salary Bill", items, month_year, month_days, is_teaching=is_teaching
             )
 
-            # 3. Individual Dedicated Sheets for Each Department in this Domain
+            # 2. Individual Dedicated Sheets for Each Department in this Domain
             dept_groups = {}
             for it in items:
                 d = it.get("department", "General") or "General"
@@ -67,22 +65,21 @@ class ExcelExporter:
                 clean_title = f"{dept_name[:26]}"
                 self._create_single_dept_salary_sheet(wb, clean_title, dept_name, d_items, month_year, month_days, is_teaching=is_teaching)
 
-            # 4. Domain Bank Disbursal Sheet
-            self._create_bank_disbursal_sheet(wb, items, f"{selected_domain} - Bank Disbursal (PNB)", month_year)
+            # 3. Domain Bank Disbursal Sheet
+            self._create_bank_disbursal_sheet(wb, items, f"{selected_domain[:15]} - Bank Disbursal", month_year)
+
+            # 4. Domain Executive Summary Overview
+            self._create_domain_summary_sheet(wb, selected_domain, items, month_year)
 
             # 5. Domain Attendance Summary Sheet
-            self._create_attendance_summary_sheet(wb, items, f"{selected_domain} - Attendance", month_year, month_days)
+            self._create_attendance_summary_sheet(wb, items, f"{selected_domain[:15]} - Attendance", month_year, month_days)
 
         else:
             # Full Master Workbook
-            # 1. Executive Summary
-            self._create_summary_sheet(wb, payroll_summary, month_year)
-
-            # 2. Teaching Faculty Master & Individual Department Sheets
+            # 1. Teaching Faculty Master & Individual Department Sheets
             teaching_items = [it for it in items if it.get("domain") == "Teaching"]
             if teaching_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Teaching Faculty", teaching_items, month_year, month_days, is_teaching=True)
-                # Individual Teaching department sheets
                 t_depts = {}
                 for it in teaching_items:
                     t_depts.setdefault(it.get("department", "General") or "General", []).append(it)
@@ -90,12 +87,12 @@ class ExcelExporter:
                     sheet_title = f"T - {dept_name[:24]}"
                     self._create_single_dept_salary_sheet(wb, sheet_title, dept_name, d_items, month_year, month_days, is_teaching=True)
 
-            # 3. Teaching (ID / Adjunct) Sheet
+            # 2. Teaching (ID / Adjunct) Sheet
             teaching_id_items = [it for it in items if it.get("domain") == "Teaching ID"]
             if teaching_id_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Teaching (ID)", teaching_id_items, month_year, month_days, is_teaching=True)
 
-            # 4. Non-Teaching Staff Master & Individual Department Sheets
+            # 3. Non-Teaching Staff Master & Individual Department Sheets
             nt_items = [it for it in items if it.get("domain") == "Non-Teaching"]
             if nt_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Non-Teaching Staff", nt_items, month_year, month_days, is_teaching=False)
@@ -106,48 +103,48 @@ class ExcelExporter:
                     sheet_title = f"NT - {dept_name[:23]}"
                     self._create_single_dept_salary_sheet(wb, sheet_title, dept_name, d_items, month_year, month_days, is_teaching=False)
 
-            # 5. Admission Staff Sheet
+            # 4. Admission Staff Sheet
             adm_items = [it for it in items if it.get("domain") == "Admission"]
             if adm_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Admission Cell", adm_items, month_year, month_days, is_teaching=False)
 
-            # 6. Support Staff - Security & Attenders
+            # 5. Support Staff - Security & Attenders
             sec_items = [it for it in items if it.get("domain") == "Support Staff" and any(k in (it.get("department") or "").lower() for k in ["security", "water", "attender"])]
             if sec_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Security & Attender", sec_items, month_year, month_days, is_teaching=False)
 
-            # 7. Support Staff - Transport & Garden
+            # 6. Support Staff - Transport & Garden
             trans_items = [it for it in items if it.get("domain") == "Support Staff" and not any(k in (it.get("department") or "").lower() for k in ["security", "water", "attender"])]
             if trans_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Transport & Garden", trans_items, month_year, month_days, is_teaching=False)
 
-            # 8. Management Staff Sheet
+            # 7. Management & Chairman Office
             mgt_items = [it for it in items if it.get("domain") == "Management"]
             if mgt_items:
                 self._create_salary_sheet_with_dept_subtotals(wb, "Management Staff", mgt_items, month_year, month_days, is_teaching=False)
 
-            # 9. SBF Facility Services Sheet
-            sbf_items = [it for it in items if it.get("domain") == "SBF Facility"]
+            # 8. SBF & Mess Units
+            sbf_items = [it for it in items if it.get("domain") in ["SBF Facility", "Hostel & Mess"]]
             if sbf_items:
-                self._create_salary_sheet_with_dept_subtotals(wb, "SBF Facility Services", sbf_items, month_year, month_days, is_teaching=False)
+                self._create_salary_sheet_with_dept_subtotals(wb, "SBF & Sharath Mess", sbf_items, month_year, month_days, is_teaching=False)
 
-            # 10. Hostel & Sharath Mess Sheet
-            mess_items = [it for it in items if it.get("domain") == "Hostel & Mess"]
-            if mess_items:
-                self._create_salary_sheet_with_dept_subtotals(wb, "Sharath Mess (SLH)", mess_items, month_year, month_days, is_teaching=False)
-
-            # 11. Bank Disbursal Sheet (PNB)
+            # 9. Master Bank Disbursal
             self._create_bank_disbursal_sheet(wb, items, "Bank Disbursal (PNB)", month_year)
 
-            # 12. Attendance Summary Sheet
+            # 10. Master University Summary
+            self._create_summary_sheet(wb, payroll_summary, month_year)
+
+            # 11. Attendance Summary Sheet
             self._create_attendance_summary_sheet(wb, items, "Attendance Summary", month_year, month_days)
 
+        # Set first detailed sheet as active by default so it opens directly onto employee rows
+        wb.active = 0
         wb.save(output_file)
         print(f"Salary Bill successfully exported with department-separated sheets to {output_file}")
         return output_file
 
     def _create_summary_sheet(self, wb, summary, month_year):
-        ws = wb.create_sheet(title="Executive Summary", index=0)
+        ws = wb.create_sheet(title="Executive Summary")
         
         ws.merge_cells("A1:F1")
         ws["A1"] = "Sri Venkateswara College of Engineering and Technology (SVCET / RVS)"
@@ -185,7 +182,7 @@ class ExcelExporter:
             current_row += 1
 
         # Grand Total Row
-        ws.cell(row=current_row, column=1, value="GRAND TOTAL").font = self.header_font
+        ws.cell(row=current_row, column=1, value="TOTAL").font = self.header_font
         ws.cell(row=current_row, column=2, value=summary.get("total_employees", 0)).font = self.header_font
         ws.cell(row=current_row, column=2).alignment = Alignment(horizontal="center")
         ws.cell(row=current_row, column=3, value=round(summary.get("total_gross", 0), 2)).font = self.header_font
@@ -230,7 +227,7 @@ class ExcelExporter:
             ws.column_dimensions[col_letter].width = max(max_len + 4, 15)
 
     def _create_domain_summary_sheet(self, wb, domain_name, items, month_year):
-        ws = wb.create_sheet(title=f"{domain_name[:20]} Summary", index=0)
+        ws = wb.create_sheet(title=f"{domain_name[:20]} Summary")
         
         ws.merge_cells("A1:F1")
         ws["A1"] = f"Sri Venkateswara College of Engineering and Technology ({domain_name.upper()})"

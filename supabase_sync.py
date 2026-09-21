@@ -254,18 +254,89 @@ class SupabaseSync:
 
     def get_payroll_runs(self):
         """
-        Fetches recent saved payroll runs from Supabase Cloud.
+        Fetches all saved payroll runs from Supabase Cloud.
         """
         if not self.is_configured():
             return self._get_local_runs()
 
         try:
-            req_url = f"{self.url}/rest/v1/payroll_runs?select=*&order=id.desc&limit=10"
+            req_url = f"{self.url}/rest/v1/payroll_runs?select=*&order=id.desc"
             req = urllib.request.Request(req_url, headers=self._headers())
             with urllib.request.urlopen(req, timeout=10) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as e:
             return self._get_local_runs()
+
+    def get_payroll_run_data(self, month_year):
+        """
+        Loads the complete payroll run and all employee salary line items for a specific month from Supabase.
+        """
+        if not self.is_configured():
+            return None
+
+        try:
+            safe_month = urllib.parse.quote(month_year)
+            run_url = f"{self.url}/rest/v1/payroll_runs?month_year=eq.{safe_month}&select=*"
+            req = urllib.request.Request(run_url, headers=self._headers())
+            with urllib.request.urlopen(req, timeout=10) as response:
+                runs = json.loads(response.read().decode("utf-8"))
+                if not runs:
+                    return None
+                run = runs[0]
+                run_id = run["id"]
+
+            items = []
+            page_size = 1000
+            offset = 0
+            while True:
+                items_url = f"{self.url}/rest/v1/payroll_items?run_id=eq.{run_id}&select=*&order=id.asc"
+                req_items = urllib.request.Request(items_url, headers={
+                    **self._headers(),
+                    "Range": f"{offset}-{offset + page_size - 1}"
+                })
+                with urllib.request.urlopen(req_items, timeout=15) as response:
+                    batch = json.loads(response.read().decode("utf-8"))
+                    if not batch:
+                        break
+                    items.extend(batch)
+                    if len(batch) < page_size:
+                        break
+                    offset += page_size
+
+            # Reconstruct domain_stats and department_stats
+            domain_stats = {}
+            dept_stats = {}
+            for it in items:
+                d = it.get("domain") or "General"
+                dept = it.get("department") or "General"
+                if d not in domain_stats:
+                    domain_stats[d] = {"count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
+                domain_stats[d]["count"] += 1
+                domain_stats[d]["gross"] += float(it.get("gross_total", 0) or 0)
+                domain_stats[d]["deductions"] += float(it.get("tot_ded", 0) or 0)
+                domain_stats[d]["net"] += float(it.get("net_salary", 0) or 0)
+
+                if dept not in dept_stats:
+                    dept_stats[dept] = {"domain": d, "count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
+                dept_stats[dept]["count"] += 1
+                dept_stats[dept]["gross"] += float(it.get("gross_total", 0) or 0)
+                dept_stats[dept]["deductions"] += float(it.get("tot_ded", 0) or 0)
+                dept_stats[dept]["net"] += float(it.get("net_salary", 0) or 0)
+
+            return {
+                "month_year": run.get("month_year"),
+                "month_days": run.get("total_days_in_month", 31),
+                "total_employees": run.get("total_employees", len(items)),
+                "total_gross": float(run.get("total_gross", 0) or 0),
+                "total_deductions": float(run.get("total_deductions", 0) or 0),
+                "total_net": float(run.get("total_net", 0) or 0),
+                "domain_stats": domain_stats,
+                "department_stats": dept_stats,
+                "items": items
+            }
+        except Exception as e:
+            print(f"[SupabaseSync] Error loading payroll run for {month_year}: {e}")
+            return None
 
     def get_stats(self):
         """
