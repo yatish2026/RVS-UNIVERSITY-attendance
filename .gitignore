@@ -1,0 +1,19 @@
+# __pycache__
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp
+
+# Uploads & Temp Exports
+uploads/
+exports/
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Virtual environments
+venv/
+env/
+.venv/
