@@ -182,30 +182,29 @@ class PayrollEngine:
 
             item = self.compute_employee_salary(emp, att, month_days=month_days, deductions=ded)
             
-            # Include active staff (with salary OR valid pay days OR institutional remarks)
-            if item["standard_salary"] > 0 or item["total_pay_days"] > 4 or item["remarks"]:
-                processed_items.append(item)
-                total_gross += item["gross_total"]
-                total_ded += item["tot_ded"]
-                total_net += item["net_salary"]
+            # Include all university employees from the database
+            processed_items.append(item)
+            total_gross += item["gross_total"]
+            total_ded += item["tot_ded"]
+            total_net += item["net_salary"]
 
-                # Aggregate by Domain
-                d = item["domain"] or "General"
-                if d not in domain_stats:
-                    domain_stats[d] = {"count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
-                domain_stats[d]["count"] += 1
-                domain_stats[d]["gross"] += item["gross_total"]
-                domain_stats[d]["deductions"] += item["tot_ded"]
-                domain_stats[d]["net"] += item["net_salary"]
+            # Aggregate by Domain
+            d = item["domain"] or "General"
+            if d not in domain_stats:
+                domain_stats[d] = {"count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
+            domain_stats[d]["count"] += 1
+            domain_stats[d]["gross"] += item["gross_total"]
+            domain_stats[d]["deductions"] += item["tot_ded"]
+            domain_stats[d]["net"] += item["net_salary"]
 
-                # Aggregate by Department
-                dept = item["department"] or "General"
-                if dept not in dept_stats:
-                    dept_stats[dept] = {"domain": d, "count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
-                dept_stats[dept]["count"] += 1
-                dept_stats[dept]["gross"] += item["gross_total"]
-                dept_stats[dept]["deductions"] += item["tot_ded"]
-                dept_stats[dept]["net"] += item["net_salary"]
+            # Aggregate by Department
+            dept = item["department"] or "General"
+            if dept not in dept_stats:
+                dept_stats[dept] = {"domain": d, "count": 0, "gross": 0.0, "deductions": 0.0, "net": 0.0}
+            dept_stats[dept]["count"] += 1
+            dept_stats[dept]["gross"] += item["gross_total"]
+            dept_stats[dept]["deductions"] += item["tot_ded"]
+            dept_stats[dept]["net"] += item["net_salary"]
 
         summary = {
             "month_year": month_year,

@@ -77,6 +77,13 @@ def upload_biometric():
 
         summary = payroll_engine.process_payroll(attendance_map, month_year, month_days)
 
+        # Auto-save run and items directly to Supabase Cloud
+        if supabase_client.is_configured():
+            try:
+                supabase_client.save_payroll_run(month_year, month_days, summary)
+            except Exception as se:
+                print(f"[Supabase Auto-Save Warning]: {se}")
+
         return jsonify({
             "status": "success",
             "filename": file.filename,
@@ -1311,4 +1318,5 @@ HTML_CONTENT = """<!DOCTYPE html>
 """
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    port = int(os.environ.get("PORT", 5050))
+    app.run(host="0.0.0.0", port=port, debug=False)
