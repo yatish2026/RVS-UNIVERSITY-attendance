@@ -1,6 +1,7 @@
 import math
 import sqlite3
 from institutional_rules import apply_institutional_employee_overrides, inject_guaranteed_exempt_employees
+from supabase_sync import SupabaseSync
 
 def calc_pt(gross_salary):
     """
@@ -16,17 +17,20 @@ def calc_pt(gross_salary):
     return 0.0
 
 class PayrollEngine:
-    def __init__(self, db_path="payroll_master.db"):
+    def __init__(self, db_path="payroll_master.db", supabase_client=None):
         self.db_path = db_path
+        self.supabase_client = supabase_client or SupabaseSync(db_path)
 
     def get_employees_map(self):
+        if self.supabase_client and self.supabase_client.is_configured():
+            return self.supabase_client.get_employees_map()
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT * FROM employees")
         rows = cur.fetchall()
         conn.close()
-        return {r["emp_id"]: dict(r) for r in rows}
+        return {str(r["emp_id"]): dict(r) for r in rows}
 
     def compute_employee_salary(self, emp, attendance_days, month_days=31, deductions=None):
         if deductions is None:

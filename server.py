@@ -33,114 +33,28 @@ def get_db_connection():
 
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    cur.execute("SELECT COUNT(*) as cnt FROM employees")
-    total_emp = cur.fetchone()["cnt"]
-
-    cur.execute("SELECT COUNT(DISTINCT department) as cnt FROM employees WHERE department IS NOT NULL AND department != ''")
-    total_depts = cur.fetchone()["cnt"]
-
-    cur.execute("SELECT SUM(standard_salary) as total_sal FROM employees")
-    total_base_payroll = cur.fetchone()["total_sal"] or 0.0
-
-    cur.execute("SELECT domain, COUNT(*) as cnt, SUM(standard_salary) as sal FROM employees GROUP BY domain ORDER BY cnt DESC")
-    domains = {r["domain"]: {"count": r["cnt"], "base_salary": r["sal"] or 0.0} for r in cur.fetchall()}
-
-    cur.execute("SELECT department, domain, COUNT(*) as cnt FROM employees GROUP BY department ORDER BY cnt DESC")
-    departments = [dict(r) for r in cur.fetchall()]
-
-    cur.execute("SELECT * FROM payroll_runs ORDER BY id DESC LIMIT 5")
-    recent_runs = [dict(r) for r in cur.fetchall()]
-
-    conn.close()
-    return jsonify({
-        "total_employees": total_emp,
-        "total_departments": total_depts,
-        "total_base_payroll": total_base_payroll,
-        "domains": domains,
-        "departments": departments,
-        "recent_runs": recent_runs,
-        "supabase_connected": supabase_client.is_configured()
-    })
+    return jsonify(supabase_client.get_stats())
 
 @app.route("/api/employees", methods=["GET"])
 def get_employees():
     search = request.args.get("search", "")
     domain = request.args.get("domain", "ALL")
     department = request.args.get("department", "ALL")
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    query = "SELECT * FROM employees WHERE 1=1"
-    params = []
-
-    if search:
-        query += " AND (emp_id LIKE ? OR emp_name LIKE ? OR account_no LIKE ?)"
-        s = f"%{search}%"
-        params.extend([s, s, s])
-
-    if domain and domain != "ALL":
-        query += " AND domain = ?"
-        params.append(domain)
-
-    if department and department != "ALL":
-        query += " AND department = ?"
-        params.append(department)
-
-    query += " ORDER BY domain ASC, CASE WHEN emp_id GLOB '[0-9]*' THEN CAST(emp_id AS INTEGER) ELSE 999999 END, emp_id ASC"
-
-    cur.execute(query, params)
-    rows = [dict(r) for r in cur.fetchall()]
-    conn.close()
+    rows = supabase_client.get_filtered_employees(search=search, domain=domain, department=department)
     return jsonify({"employees": rows, "count": len(rows)})
 
 @app.route("/api/employees", methods=["POST"])
 def save_employee():
     data = request.get_json(force=True)
-    emp_id = data.get("emp_id")
-    emp_name = data.get("emp_name")
-    domain = data.get("domain", "Teaching")
-    
-    if not emp_id or not emp_name:
-        return jsonify({"status": "error", "message": "Employee ID and Name are required"}), 400
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-    INSERT OR REPLACE INTO employees
-    (emp_id, emp_name, domain, category, department, designation, salary_type, standard_salary, consolidated_salary, basic, agp, fa, ta_sa, epf_fixed, it_fixed, account_no, ifsc_code)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        emp_id, emp_name, domain, domain,
-        data.get("department", "General"),
-        data.get("designation", ""),
-        data.get("salary_type", "REGULAR"),
-        float(data.get("standard_salary", 0.0) or 0.0),
-        float(data.get("consolidated_salary", 0.0) or 0.0),
-        float(data.get("basic", 0.0) or 0.0),
-        float(data.get("agp", 0.0) or 0.0),
-        float(data.get("fa", 0.0) or 0.0),
-        float(data.get("ta_sa", 0.0) or 0.0),
-        float(data.get("epf_fixed", 0.0) or 0.0),
-        float(data.get("it_fixed", 0.0) or 0.0),
-        data.get("account_no", ""),
-        data.get("ifsc_code", "")
-    ))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "message": f"Employee {emp_id} saved successfully"})
+    res = supabase_client.save_employee(data)
+    if res.get("status") == "error":
+        return jsonify(res), 400
+    return jsonify(res)
 
 @app.route("/api/employees/<emp_id>", methods=["DELETE"])
 def delete_employee(emp_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM employees WHERE emp_id = ?", (emp_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success", "message": f"Employee {emp_id} deleted"})
+    res = supabase_client.delete_employee(emp_id)
+    return jsonify(res)
 
 @app.route("/api/upload-biometric", methods=["POST"])
 def upload_biometric():
@@ -198,46 +112,8 @@ def save_payroll():
     month_year = data.get("month_year")
     month_days = int(data.get("month_days", 31))
     summary = data.get("summary", {})
-
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("DELETE FROM payroll_runs WHERE month_year = ?", (month_year,))
-        cur.execute("""
-        INSERT INTO payroll_runs (month_year, total_days_in_month, total_employees, total_gross, total_deductions, total_net)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            month_year,
-            month_days,
-            summary.get("total_employees", 0),
-            summary.get("total_gross", 0.0),
-            summary.get("total_deductions", 0.0),
-            summary.get("total_net", 0.0)
-        ))
-        run_id = cur.lastrowid
-
-        cur.execute("DELETE FROM payroll_items WHERE run_id = ?", (run_id,))
-        for it in summary.get("items", []):
-            cur.execute("""
-            INSERT INTO payroll_items 
-            (run_id, emp_id, emp_name, domain, category, department, designation, total_salary, basic, agp, month_days, total_pay_days, basic_agp, da, hra, arrears, fa, ta_sa, gross_total, epf, it, pt, wf, eb, mess, bus, tot_ded, net_salary, account_no, ifsc_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                run_id, it.get("emp_id"), it.get("emp_name"), it.get("domain"), it.get("category"), it.get("department"),
-                it.get("designation"), it.get("standard_salary"), it.get("basic"), it.get("agp"),
-                month_days, it.get("total_pay_days"), it.get("basic_agp"), it.get("da"),
-                it.get("hra"), it.get("arrears"), it.get("fa"), it.get("ta_sa"), it.get("gross_total"),
-                it.get("epf"), it.get("it"), it.get("pt"), it.get("wf"), it.get("eb"), it.get("mess"),
-                it.get("bus"), it.get("tot_ded"), it.get("net_salary"), it.get("account_no"), it.get("ifsc_code")
-            ))
-
-        conn.commit()
-        return jsonify({"status": "success", "run_id": run_id, "message": f"Payroll for {month_year} successfully locked and saved."})
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        conn.close()
+    res = supabase_client.save_payroll_run(month_year, month_days, summary)
+    return jsonify(res)
 
 @app.route("/api/export-excel", methods=["POST"])
 def export_excel():
