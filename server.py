@@ -5,6 +5,11 @@ import sqlite3
 import shutil
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, render_template_string
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from biometric_parser import BiometricParser
 from payroll_engine import PayrollEngine

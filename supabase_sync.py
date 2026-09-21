@@ -3,15 +3,17 @@ import json
 import sqlite3
 import urllib.request
 import urllib.parse
-
-DEFAULT_SUPABASE_URL = "https://fzdzaowjiapxvfrxrdzc.supabase.co"
-DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZHphb3dqaWFweHZmcnhyZHpjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTk3Nzk0MiwiZXhwIjoyMTA1NTUzOTQyfQ.RmQouMmkGYPl3NSFxu0Lf_gzGDxGs8zuXmHR7foLW6Y"
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 class SupabaseSync:
     def __init__(self, db_path="payroll_master.db", url=None, key=None):
         self.db_path = db_path
-        self.url = (url or os.environ.get("SUPABASE_URL", DEFAULT_SUPABASE_URL)).rstrip("/")
-        self.key = key or os.environ.get("SUPABASE_KEY", DEFAULT_SUPABASE_KEY)
+        self.url = (url or os.environ.get("SUPABASE_URL", "")).rstrip("/")
+        self.key = key or os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY", "")
 
     def is_configured(self):
         return bool(self.url and self.key)
@@ -56,8 +58,19 @@ class SupabaseSync:
         chunk_size = 100
         total_synced = 0
         
-        for i in range(0, len(rows), chunk_size):
-            chunk = rows[i:i + chunk_size]
+        allowed_keys = {
+            "emp_id", "emp_name", "domain", "category", "department", "designation",
+            "salary_type", "standard_salary", "consolidated_salary", "basic", "agp",
+            "fa", "ta_sa", "epf_fixed", "it_fixed", "account_no", "ifsc_code"
+        }
+
+        sanitized_rows = [
+            {k: v for k, v in r.items() if k in allowed_keys}
+            for r in rows
+        ]
+        
+        for i in range(0, len(sanitized_rows), chunk_size):
+            chunk = sanitized_rows[i:i + chunk_size]
             try:
                 req_url = f"{self.url}/rest/v1/employees"
                 data = json.dumps(chunk).encode("utf-8")
@@ -86,33 +99,45 @@ class SupabaseSync:
             return {"status": "skipped", "message": "Supabase credentials not configured."}
 
         try:
-            req_url = f"{self.url}/rest/v1/employees?select=*"
-            req = urllib.request.Request(req_url, headers={
-                "apikey": self.key,
-                "Authorization": f"Bearer {self.key}"
-            })
+            records = []
+            page_size = 1000
+            offset = 0
 
-            with urllib.request.urlopen(req, timeout=15) as response:
-                records = json.loads(response.read().decode("utf-8"))
+            while True:
+                req_url = f"{self.url}/rest/v1/employees?select=*&order=emp_id.asc"
+                req = urllib.request.Request(req_url, headers={
+                    "apikey": self.key,
+                    "Authorization": f"Bearer {self.key}",
+                    "Range": f"{offset}-{offset + page_size - 1}"
+                })
+
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    batch = json.loads(response.read().decode("utf-8"))
+                    if not batch:
+                        break
+                    records.extend(batch)
+                    if len(batch) < page_size:
+                        break
+                    offset += page_size
                 
-                conn = sqlite3.connect(self.db_path)
-                cur = conn.cursor()
-                for r in records:
-                    cur.execute("""
-                    INSERT OR REPLACE INTO employees 
-                    (emp_id, emp_name, domain, category, department, designation, salary_type, standard_salary, consolidated_salary, basic, agp, fa, ta_sa, epf_fixed, it_fixed, account_no, ifsc_code)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        r.get("emp_id"), r.get("emp_name"), r.get("domain", "Teaching"), r.get("category", "Teaching"),
-                        r.get("department", "General"), r.get("designation", ""), r.get("salary_type", "REGULAR"),
-                        float(r.get("standard_salary", 0) or 0), float(r.get("consolidated_salary", 0) or 0),
-                        float(r.get("basic", 0) or 0), float(r.get("agp", 0) or 0), float(r.get("fa", 0) or 0),
-                        float(r.get("ta_sa", 0) or 0), float(r.get("epf_fixed", 0) or 0), float(r.get("it_fixed", 0) or 0),
-                        r.get("account_no", ""), r.get("ifsc_code", "PUNB0401700")
-                    ))
-                conn.commit()
-                conn.close()
-                return {"status": "success", "pulled_count": len(records), "message": f"Updated {len(records)} local employee records from Supabase"}
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            for r in records:
+                cur.execute("""
+                INSERT OR REPLACE INTO employees 
+                (emp_id, emp_name, domain, category, department, designation, salary_type, standard_salary, consolidated_salary, basic, agp, fa, ta_sa, epf_fixed, it_fixed, account_no, ifsc_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    r.get("emp_id"), r.get("emp_name"), r.get("domain", "Teaching"), r.get("category", "Teaching"),
+                    r.get("department", "General"), r.get("designation", ""), r.get("salary_type", "REGULAR"),
+                    float(r.get("standard_salary", 0) or 0), float(r.get("consolidated_salary", 0) or 0),
+                    float(r.get("basic", 0) or 0), float(r.get("agp", 0) or 0), float(r.get("fa", 0) or 0),
+                    float(r.get("ta_sa", 0) or 0), float(r.get("epf_fixed", 0) or 0), float(r.get("it_fixed", 0) or 0),
+                    r.get("account_no", ""), r.get("ifsc_code", "PUNB0401700")
+                ))
+            conn.commit()
+            conn.close()
+            return {"status": "success", "pulled_count": len(records), "message": f"Updated {len(records)} local employee records from Supabase"}
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
             return {"status": "error", "message": f"Supabase pull failed: {err_body}"}

@@ -1,10 +1,14 @@
+import os
 import urllib.request
 import json
 import sqlite3
+from dotenv import load_dotenv
 
-url = "https://fzdzaowjiapxvfrxrdzc.supabase.co"
-service_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZHphb3dqaWFweHZmcnhyZHpjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTk3Nzk0MiwiZXhwIjoyMTA1NTUzOTQyfQ.RmQouMmkGYPl3NSFxu0Lf_gzGDxGs8zuXmHR7foLW6Y"
-anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZHphb3dqaWFweHZmcnhyZHpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5Nzc5NDIsImV4cCI6MjEwNTU1Mzk0Mn0.cvJnMO3fR7D7L9ys5ng8go7myi2F8gbC2h11GsjfgAc"
+load_dotenv()
+
+url = os.environ.get("SUPABASE_URL", "")
+service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
 
 print("Checking endpoints...")
 
