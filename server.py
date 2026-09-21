@@ -1000,12 +1000,17 @@ HTML_CONTENT = r"""<!DOCTYPE html>
                 <td style="color: var(--success); font-weight: 700;">₹${Math.round(r.total_net || 0).toLocaleString('en-IN')}</td>
                 <td style="color: var(--text-muted); font-size: 0.8rem;">${new Date(r.created_at).toLocaleDateString()}</td>
                 <td>
-                  <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="loadSavedPayrollMonth('${r.month_year}')"><i data-lucide="eye"></i> View</button>
+                  <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="loadSavedPayrollMonth('${r.month_year}', true)"><i data-lucide="eye"></i> View</button>
                   <button class="btn btn-success" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;" onclick="downloadSpecificMonthExcel('${r.month_year}')"><i data-lucide="download"></i> Excel</button>
                 </td>
               `;
               tbody.appendChild(tr);
             });
+
+            // Automatically pre-load the latest month into memory if not loaded yet
+            if (!currentPayrollSummary && runs.length > 0) {
+              await loadSavedPayrollMonth(runs[0].month_year, false);
+            }
           }
         }
         lucide.createIcons();
@@ -1014,7 +1019,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
       }
     }
 
-    async function loadSavedPayrollMonth(monthYear) {
+    async function loadSavedPayrollMonth(monthYear, switchTabToPayroll = true) {
       if (!monthYear) return;
       try {
         const res = await fetch(`/api/payroll-runs/${encodeURIComponent(monthYear)}`);
@@ -1051,7 +1056,9 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
           renderPayrollTable();
           renderAttendanceTable();
-          switchTab('payroll');
+          if (switchTabToPayroll) {
+            switchTab('payroll');
+          }
         }
       } catch (e) {
         alert('Failed to load month: ' + e.message);
