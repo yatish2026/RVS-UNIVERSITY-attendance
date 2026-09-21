@@ -1196,7 +1196,16 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 
       try {
         const res = await fetch('/api/upload-biometric', { method: 'POST', body: formData });
-        const data = await res.json();
+        let data = {};
+        const rawText = await res.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (pe) {
+          if (res.status === 413 || rawText.includes('Request Entity Too Large') || rawText.includes('PAYLOAD_TOO_LARGE')) {
+            throw new Error(`File size (${(file.size / (1024*1024)).toFixed(1)}MB) exceeds Vercel's 4.5MB serverless payload limit. Please use your Render deployment (https://rvs-university-attendance.onrender.com) which has no file size limit for large machine exports!`);
+          }
+          throw new Error(rawText.substring(0, 150) || `Server returned HTTP ${res.status}`);
+        }
 
         if (res.ok) {
           currentAttendance = data.attendance;
